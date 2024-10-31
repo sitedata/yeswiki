@@ -19,7 +19,7 @@ use YesWiki\Core\Exception\UserNameAlreadyUsedException;
 use YesWiki\Security\Controller\SecurityController;
 use YesWiki\Wiki;
 
-if (! function_exists('send_mail')) {
+if (!function_exists('send_mail')) {
     require_once 'includes/email.inc.php';
 }
 
@@ -33,7 +33,6 @@ class UserManager implements UserProviderInterface, PasswordUpgraderInterface
     protected $userlink;
     private $getOneByNameCacheResults;
 
-    private const PW_SALT = 'FBcA';
     public const KEY_VOCABULARY = 'http://outils-reseaux.org/_vocabulary/key';
 
     public function __construct(
@@ -49,7 +48,7 @@ class UserManager implements UserProviderInterface, PasswordUpgraderInterface
         $this->securityController = $securityController;
         $this->params = $params;
         $this->getOneByNameCacheResults = [];
-        $this->userlink = "";
+        $this->userlink = '';
     }
 
     private function arrayToUser(?array $userAsArray = null, bool $fillEmpty = false): ?User
@@ -198,18 +197,20 @@ class UserManager implements UserProviderInterface, PasswordUpgraderInterface
     protected function generateUserLink($user)
     {
         // Generate the password recovery key
-        $key = md5($user['name'] . '_' . $user['email'] . random_int(0, 10000) . date('Y-m-d H:i:s') . self::PW_SALT);
+        $passwordHasher = $this->passwordHasherFactory->getPasswordHasher($user);
+        $plainKey = $user['name'] . '_' . $user['email'] . random_int(0, 10000) . date('Y-m-d H:i:s');
+        $hashedKey = $passwordHasher->hash($plainKey);
         $tripleStore = $this->wiki->services->get(TripleStore::class);
         // Erase the previous triples in the trible table
         $tripleStore->delete($user['name'], self::KEY_VOCABULARY, null, '', '');
         // Store the (name, vocabulary, key) triple in triples table
-        $tripleStore->create($user['name'], self::KEY_VOCABULARY, $key, '', '');
+        $tripleStore->create($user['name'], self::KEY_VOCABULARY, $hashedKey, '', '');
 
         // Generate the recovery email
         $this->userlink = $this->wiki->Href('', 'MotDePassePerdu', [
             'a' => 'recover',
-            'email' => $key,
-            'u' => base64_encode($user['name'])
+            'email' => $hashedKey,
+            'u' => base64_encode($user['name']),
         ], false);
     }
 
@@ -242,9 +243,7 @@ class UserManager implements UserProviderInterface, PasswordUpgraderInterface
     }
 
     /**
-     * Assessor for userlink field
-     * 
-     * @return string
+     * Assessor for userlink field.
      */
     public function getUserLink(): string
     {
@@ -252,23 +251,25 @@ class UserManager implements UserProviderInterface, PasswordUpgraderInterface
     }
 
     /**
-     * Assessor for userlink field
-     *
-     * @return string
+     * Assessor for userlink field.
      */
     public function getLastUserLink(User $user): string
     {
+        $passwordHasher = $this->passwordHasherFactory->getPasswordHasher($user);
+        $plainKey = $user['name'] . '_' . $user['email'] . random_int(0, 10000) . date('Y-m-d H:i:s');
+        $hashedKey = $passwordHasher->hash($plainKey);
         $tripleStore = $this->wiki->services->get(TripleStore::class);
         $key = $tripleStore->getOne($user['name'], self::KEY_VOCABULARY, '', '');
         if ($key != null) {
             $this->userlink = $this->wiki->Href('', 'MotDePassePerdu', [
                 'a' => 'recover',
                 'email' => $key,
-                'u' => base64_encode($user['name'])
+                'u' => base64_encode($user['name']),
             ], false);
         } else {
             $this->generateUserLink($user);
         }
+
         return $this->userlink;
     }
 
